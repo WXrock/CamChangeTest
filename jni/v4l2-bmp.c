@@ -50,11 +50,13 @@
 #define CAPTURE_JPEG_FILE6 "/sdcard/frame_jpeg_new6.jpg"
 #define CAPTURE_JPEG_FILE7 "/sdcard/frame_jpeg_new7.jpg"
 
-#define VIDEO_WIDTH 1280
-#define VIDEO_HEIGHT 1024
+#define VIDEO_WIDTH 2048
+#define VIDEO_HEIGHT 1536
 #define VIDEO_FORMAT V4L2_PIX_FMT_YUV420
-#define BUFFER_COUNT 8   //3
+#define BUFFER_COUNT 3   //3
 #define DEFAULT_FPS 15
+#define BUF_SIZE 4718592  //2048*1536*1.5
+#define NUM 8  //the num of camera
 
 #define CLEAR(x) memset(&(x),0,sizeof(x))
 
@@ -85,6 +87,8 @@ struct v4l2_buffer buf;
 unsigned char *starter;
 unsigned char *newBuf;
 int fd_gpio;
+unsigned char *tmp_buf[8];
+
 
 static int open_device()
 {
@@ -394,6 +398,7 @@ JNIEXPORT jint JNICALL Java_com_wx_CamChange_JniCamera_prepareBuffer(JNIEnv* env
 		 jobject thiz)
 {
 	jint ret = 0;
+    int i;
 	// 打开设备
 	fd=open_device();
 
@@ -422,9 +427,21 @@ JNIEXPORT jint JNICALL Java_com_wx_CamChange_JniCamera_prepareBuffer(JNIEnv* env
 
 	// 获取空间，并将其映射到用户空间，然后投放到视频输入队列
 	query_map_qbuf();
-
+    
+    //prepare for 8 buffers
+    LOGI("prepare for 8 buffer");
+    print_time();
+    for(i=0;i<NUM;i++) {
+        tmp_buf[i] = (unsigned char *)malloc(BUF_SIZE);
+        if(tmp_buf[i]<0) {
+            ret = -1;
+            LOGI("MALLOC BUFFER FAILED!!!");
+            return ret;
+        }
+    }
+    print_time();
 	//wait for stable
-	usleep(500000); //wait 500 ms
+    usleep(500000); //wait 500 ms
 
 
 	return ret;
@@ -493,16 +510,19 @@ JNIEXPORT jint JNICALL Java_com_wx_CamChange_JniCamera_takePicture(JNIEnv* env,
 
     //read one frame
     LOGI("read frame\n");
-    for(i=0;i<8;i++){
+    for(i=0;i<NUM;i++){
     	print_time();
     	ret = ioctl(fd, VIDIOC_DQBUF, &buf);//VIDIOC_DQBUF命令结果, 使从队列删除的缓冲帧信息传给了此buf
     	if (ret < 0) {
     	    LOGI("VIDIOC_DQBUF failed (%d)\n", ret);
     	    return ret;
     	 }
-    	print_time();
-    	starter=(unsigned char *)framebuf[buf.index].start;
-        yuv420_to_jpeg(starter,VIDEO_WIDTH,VIDEO_HEIGHT,fp[i],100);
+    	if( memcpy(tmp_buf[i],framebuf[buf.index].start,framebuf[buf.index].length) < 0) {
+            ret < 0;
+            LOGI("MEMCPY FAILED !!!");
+            return ret;
+        }
+   //     yuv420_to_jpeg(starter,VIDEO_WIDTH,VIDEO_HEIGHT,fp[i],100);
     	ret = ioctl(fd, VIDIOC_QBUF, &buf);
     	if (ret < 0) {
     	    LOGI("VIDIOC_QBUF failed (%d)\n", ret);
@@ -510,6 +530,10 @@ JNIEXPORT jint JNICALL Java_com_wx_CamChange_JniCamera_takePicture(JNIEnv* env,
     	}
     	print_time();
 
+    }
+
+    for(i=0;i<NUM;i++) {     
+        yuv420_to_jpeg(tmp_buf[i],VIDEO_WIDTH,VIDEO_HEIGHT,fp[i],100);
     }
 
 	writeGPIO(3,SEND,0);
@@ -532,7 +556,10 @@ JNIEXPORT jint JNICALL Java_com_wx_CamChange_JniCamera_takePicture(JNIEnv* env,
     fclose(fp5);
     fclose(fp6);
     fclose(fp7);
-
+    
+    for(i=0;i<NUM;i++) {
+        free(tmp_buf[i]);
+    }
 
     LOGI("Take Picture Done.\n");
 

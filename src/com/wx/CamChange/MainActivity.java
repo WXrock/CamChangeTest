@@ -24,6 +24,8 @@ public class MainActivity extends Activity {
 	private MyCamera mCamera;
 	private StringBuilder str;
 	
+	private Thread server = null;
+	
 	private static final String TAG = "MainActivity";
 
 	
@@ -116,6 +118,9 @@ public class MainActivity extends Activity {
 				
 			}
 		});
+		
+		this.server = new Thread(new ServerThread());
+		this.server.start();
 		
 	}
 

@@ -27,3 +27,6 @@ proguard/
 
 #libs
 libs/
+
+#obj
+obj/
